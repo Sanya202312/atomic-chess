@@ -5,325 +5,211 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Atomic Blast Chess</title>
     
-    <!-- Firebase Libraries -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
     <style>
-        :root {
-            --bg: #0b0c15;
-            --accent: #00f3ff;
-            --danger: #ff0055;
-            --glass: rgba(255, 255, 255, 0.05);
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            margin: 0;
-            background-color: var(--bg);
-            color: #fff;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            overflow: hidden;
-            user-select: none;
-            -webkit-user-select: none;
-            touch-action: none;
-        }
-
-        /* --- LAYOUT --- */
-        #game-ui {
-            width: 95vmin;
-            height: 95vmin;
-            max-width: 600px;
-            max-height: 600px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            position: relative;
-        }
-
-        /* Header */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--glass);
-            padding: 10px 15px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-
-        h1 { margin: 0; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); }
+        :root { --bg: #0b0c15; --accent: #00f3ff; --danger: #ff0055; --valid: #00ff88; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; touch-action: none; }
         
-        #status-container { display: flex; align-items: center; gap: 8px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
-        .dot.online { background: #00ff00; box-shadow: 0 0 5px #00ff00; }
-        #status-text { font-size: 0.9rem; color: #ccc; font-weight: 600; }
-
-        /* Board Area */
-        #board-wrapper {
-            flex: 1;
-            position: relative;
-            border: 2px solid #2a2b38;
-            background: #1e1e24;
-            border-radius: 4px;
-            isolation: isolate; 
-            transition: transform 0.6s cubic-bezier(0.4, 0.0, 0.2, 1);
+        #game-ui { width: 95vmin; height: 95vmin; max-width: 600px; max-height: 600px; position: relative; display: flex; flex-direction: column; gap: 10px; }
+        
+        .header { display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; }
+        h1 { margin: 0; font-size: 1.1rem; color: var(--accent); }
+        #status { font-weight: bold; color: #aaa; }
+        
+        #board-wrapper { flex: 1; position: relative; border: 2px solid #333; background: #1e1e24; transition: transform 0.5s; }
+        .rotated { transform: rotate(180deg); }
+        
+        #board-grid { 
+            width: 100%; height: 100%; 
+            display: grid; 
+            grid-template-columns: repeat(8, 1fr); 
+            grid-template-rows: repeat(8, 1fr); 
         }
         
-        #board-wrapper.rotated { transform: rotate(180deg); }
-
-        /* Grid */
-        #board-grid {
-            width: 100%; height: 100%;
-            display: grid;
-            grid-template-columns: repeat(8, 1fr);
-            grid-template-rows: repeat(8, 1fr);
-        }
-
-        .square { width: 100%; height: 100%; }
-        .square.light { background-color: #2d2d3a; }
-        .square.dark { background-color: #1e1e24; }
+        .square { width: 100%; height: 100%; position: relative; z-index: 5; }
+        .light { background: #2d2d3a; } .dark { background: #1e1e24; }
         
-        .square.highlight { background-color: rgba(0, 243, 255, 0.25) !important; }
-        .square.last-move { background-color: rgba(255, 255, 255, 0.15) !important; }
-        .square.danger { background-color: rgba(255, 0, 85, 0.5) !important; }
+        .selected-sq { background: rgba(0, 243, 255, 0.4) !important; }
+        
+        /* Check warning is now just visual info, not a blocker */
+        .in-check { background: radial-gradient(circle, rgba(255, 0, 85, 0.8) 0%, transparent 80%) !important; animation: pulse-red 1s infinite; }
+        @keyframes pulse-red { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
 
-        /* Layers */
+        .valid-move::after { 
+            content:''; position: absolute; width: 25%; height: 25%; 
+            background: var(--valid); border-radius: 50%; 
+            top: 37.5%; left: 37.5%; box-shadow: 0 0 8px var(--valid); 
+            z-index: 8; pointer-events: none;
+        }
+        .capture-move { background: rgba(255, 0, 85, 0.4) !important; box-shadow: inset 0 0 15px var(--danger); }
+        
         .layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
-        #pieces-layer { z-index: 10; }
-        #effects-layer { z-index: 20; } /* Взрывы поверх фигур */
+        #pieces { z-index: 10; }
+        #effects { z-index: 20; }
 
-        .piece {
-            position: absolute;
-            width: 12.5%; height: 12.5%;
-            display: flex; justify-content: center; align-items: center;
-            font-size: 8vmin;
-            transition: transform 0.2s ease-out;
-            will-change: transform;
-        }
-        @media (min-width: 600px) { .piece { font-size: 3rem; } }
+        .piece { position: absolute; width: 12.5%; height: 12.5%; display: flex; justify-content: center; align-items: center; font-size: 8vmin; transition: transform 0.2s; z-index: 15; }
+        @media(min-width:600px) { .piece { font-size: 3rem; } }
+        .p-w { color: #fff; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
+        .p-b { color: #111; text-shadow: 0 0 2px rgba(255,255,255,0.5); }
 
-        .piece.white { color: #fff; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
-        .piece.black { color: #111; text-shadow: 0 0 2px rgba(255,255,255,0.5); }
+        .explosion { position: absolute; width: 12.5%; height: 12.5%; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #f00 100%); animation: boom 0.6s forwards; mix-blend-mode: screen; z-index: 50; }
+        @keyframes boom { 0% { transform: scale(0.5); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
+        .shake { animation: shake 0.4s; }
+        @keyframes shake { 0%,100% { transform: translate(0,0) rotate(var(--rot)); } 25% { transform: translate(5px,0) rotate(var(--rot)); } 75% { transform: translate(-5px,0) rotate(var(--rot)); } }
 
-        /* Effects */
-        .explosion {
-            position: absolute;
-            width: 12.5%; height: 12.5%;
-            border-radius: 50%;
-            background: radial-gradient(circle, #fff 0%, #ffaa00 40%, #ff0055 100%);
-            transform: scale(0);
-            opacity: 1;
-            animation: boom 0.6s ease-out forwards;
-            box-shadow: 0 0 20px #ff0055;
-            mix-blend-mode: screen; 
-        }
-
-        @keyframes boom {
-            0% { transform: scale(0.5); opacity: 1; }
-            50% { transform: scale(2.5); opacity: 0.8; }
-            100% { transform: scale(3.5); opacity: 0; }
-        }
-
-        .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake {
-            10%, 90% { transform: translate3d(-1px, 0, 0) rotate(180deg); }
-            20%, 80% { transform: translate3d(2px, 0, 0) rotate(180deg); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0) rotate(180deg); }
-            40%, 60% { transform: translate3d(4px, 0, 0) rotate(180deg); }
-        }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11,12,21,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .hidden { display: none !important; }
         
-        .shake-normal { animation: shakeN 0.4s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shakeN {
-            10%, 90% { transform: translate3d(-1px, 0, 0); }
-            20%, 80% { transform: translate3d(2px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-            40%, 60% { transform: translate3d(4px, 0, 0); }
-        }
-
-        /* Menus */
-        .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(11, 12, 21, 0.95);
-            backdrop-filter: blur(10px);
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            z-index: 100;
-            transition: opacity 0.3s;
-        }
-        .hidden { opacity: 0; pointer-events: none; }
-
-        .title { font-size: 2.5rem; font-weight: 900; color: var(--accent); text-align: center; line-height: 0.9; margin-bottom: 2rem; }
+        button { background: transparent; border: 1px solid #fff; color: #fff; padding: 12px 24px; margin: 8px; cursor: pointer; text-transform: uppercase; width: 220px; font-weight: bold; }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        .primary { border-color: var(--accent); color: var(--accent); }
+        .footer { display: flex; justify-content: center; gap: 10px; }
+        .footer button { width: auto; font-size: 0.8rem; padding: 8px 16px; width: auto; }
         
-        button {
-            background: transparent;
-            border: 1px solid rgba(255,255,255,0.3);
-            color: #fff;
-            padding: 12px 24px;
-            margin: 5px;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            cursor: pointer;
-            transition: 0.2s;
-            width: 220px;
-        }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); box-shadow: 0 0 15px var(--accent); }
-        button:disabled { opacity: 0.5; cursor: default; box-shadow: none; border-color: #555; background: transparent; color: #888; }
-        
-        .btn-primary { border-color: var(--accent); color: var(--accent); font-weight: bold; }
-        .btn-primary:hover { color: #000; }
-
-        /* Footer Controls */
-        .footer { display: flex; justify-content: center; gap: 10px; padding-top: 10px; }
-        .footer button { width: auto; font-size: 0.8rem; padding: 8px 16px; }
-
-        /* Loading Spinner */
-        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top-color: var(--accent); border-radius: 50%; animation: spin 1s infinite linear; margin-bottom: 1rem; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
+        #win-modal { background: rgba(0,0,0,0.9); z-index: 200; }
+        #win-text { font-size: 2rem; color: var(--valid); margin-bottom: 20px; text-align: center; }
     </style>
 </head>
 <body>
 
-    <!-- MENU -->
-    <div id="main-menu" class="overlay">
-        <div class="title">ATOMIC<br>CHESS</div>
-        <button class="btn-primary" onclick="Game.findMatch()">Play Online</button>
+    <div id="menu" class="overlay">
+        <h1 style="color:var(--accent); font-size:3rem; margin-bottom:20px;">ATOMIC<br>CHESS</h1>
+        <button class="primary" onclick="Game.findMatch()">Play Online</button>
         <button onclick="Game.startLocal()">Local PvP</button>
-        <button onclick="Game.startBot(2)">Vs Bot</button>
-        <div style="margin-top: 2rem; font-size: 0.7rem; color: #666;">Vercel Edition</div>
+        <button onclick="Game.startBot()">Vs Smart Bot</button>
+        <div style="margin-top:20px; color:#555; font-size:0.8rem;">Capture The King Edition</div>
     </div>
 
-    <div id="loading-screen" class="overlay hidden">
-        <div class="spinner"></div>
-        <div id="loading-msg">Connecting...</div>
-        <button onclick="Game.cancelMatch()" style="margin-top:20px; border-color:#555; color:#aaa;">Cancel</button>
+    <div id="loading" class="overlay hidden">
+        <div style="font-size:1.5rem; margin-bottom:20px;">Searching...</div>
+        <button onclick="Game.cancelMatch()">Cancel</button>
     </div>
 
-    <!-- GAME UI -->
+    <div id="win-modal" class="overlay hidden">
+        <div id="win-text">WHITE WINS!</div>
+        <button class="primary" onclick="location.reload()">Menu</button>
+    </div>
+
     <div id="game-ui">
         <div class="header">
             <h1 id="app-title">Atomic Chess</h1>
-            <div id="status-container">
-                <div id="conn-dot" class="dot"></div>
-                <div id="status-text">Ready</div>
-            </div>
+            <span id="status">Ready</span>
         </div>
-
         <div id="board-wrapper">
             <div id="board-grid"></div>
-            <div id="pieces-layer" class="layer"></div>
-            <div id="effects-layer" class="layer"></div>
+            <div id="pieces" class="layer"></div>
+            <div id="effects" class="layer"></div>
         </div>
-
         <div class="footer">
-            <button onclick="UI.showMenu()">Menu</button>
-            <button id="btn-undo" onclick="Game.undo()">Undo</button>
+            <button onclick="document.getElementById('menu').classList.remove('hidden')">Menu</button>
+            <button onclick="Game.undo()">Undo</button>
         </div>
     </div>
 
     <script>
-        // ==========================================
-        // CONFIGURATION (ВСТАВЛЕНО АВТОМАТИЧЕСКИ)
-        // ==========================================
-        
         const firebaseConfig = {
-          apiKey: "AIzaSyCLB5bIoXGPWpfGkewBcXOJGBczK6c3L54",
-          authDomain: "explosive-checkmate.firebaseapp.com",
-          projectId: "explosive-checkmate",
-          storageBucket: "explosive-checkmate.firebasestorage.app",
-          messagingSenderId: "731999225742",
-          appId: "1:731999225742:web:349d39589df0558f4d06df",
-          measurementId: "G-X50W31QC4R"
+            apiKey: "AIzaSyCLB5bIoXGPWpfGkewBcXOJGBczK6c3L54",
+            authDomain: "explosive-checkmate.firebaseapp.com",
+            projectId: "explosive-checkmate",
+            storageBucket: "explosive-checkmate.firebasestorage.app",
+            messagingSenderId: "731999225742",
+            appId: "1:731999225742:web:349d39589df0558f4d06df",
+            measurementId: "G-X50W31QC4R"
         };
 
-        // ==========================================
-        // ENGINE
-        // ==========================================
+        function nr(r, c) { return r>=0 && r<8 && c>=0 && c<8; }
+
         const Engine = {
-            board: [],
-            turn: 'w',
-            history: [],
+            board: [], turn: 'w',
             
             init() {
                 this.board = [
-                    ['bR', 'bN', 'bB', 'bQ', 'bK', 'bB', 'bN', 'bR'],
-                    ['bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP', 'bP'],
-                    ...Array(4).fill(null).map(() => Array(8).fill(null)),
-                    ['wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP', 'wP'],
-                    ['wR', 'wN', 'wB', 'wQ', 'wK', 'wB', 'wN', 'wR']
+                    ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+                    ['bP','bP','bP','bP','bP','bP','bP','bP'],
+                    ...Array(4).fill(null).map(()=>Array(8).fill(null)),
+                    ['wP','wP','wP','wP','wP','wP','wP','wP'],
+                    ['wR','wN','wB','wQ','wK','wB','wN','wR']
                 ];
                 this.turn = 'w';
-                this.history = [];
             },
 
-            getPiece(r, c) {
-                if (r<0 || r>7 || c<0 || c>7) return null;
-                return this.board[r][c];
-            },
+            applyMove(boardState, from, to) {
+                const newBoard = JSON.parse(JSON.stringify(boardState));
+                const p = newBoard[from.r][from.c];
+                const t = newBoard[to.r][to.c];
+                const exploded = [];
 
-            move(from, to, isSimulation = false) {
-                const piece = this.board[from.r][from.c];
-                const target = this.board[to.r][to.c];
-                
-                if (!isSimulation) {
-                    this.history.push({
-                        board: JSON.stringify(this.board),
-                        turn: this.turn
-                    });
+                newBoard[to.r][to.c] = p;
+                newBoard[from.r][from.c] = null;
+
+                if(p && p[1]==='P' && (to.r===0 || to.r===7)) {
+                    newBoard[to.r][to.c] = p[0]+'Q';
                 }
 
-                this.board[to.r][to.c] = piece;
-                this.board[from.r][from.c] = null;
+                if (t) { 
+                    for(let i=to.r-1; i<=to.r+1; i++) {
+                        for(let j=to.c-1; j<=to.c+1; j++) {
+                            if(nr(i,j)) {
+                                // Attacker survives rule
+                                if (i === to.r && j === to.c) continue;
 
-                // Promotion
-                if (piece[1] === 'P' && (to.r === 0 || to.r === 7)) {
-                    this.board[to.r][to.c] = piece[0] + 'Q';
-                }
-
-                let exploded = [];
-                // Explosion
-                if (target) {
-                    for(let r = to.r-1; r <= to.r+1; r++) {
-                        for(let c = to.c-1; c <= to.c+1; c++) {
-                            if (r>=0 && r<8 && c>=0 && c<8) {
-                                const p = this.board[r][c];
-                                if (p && p[1] !== 'K') {
-                                    this.board[r][c] = null;
+                                const victim = newBoard[i][j];
+                                if (victim) {
+                                    if (victim[1] !== 'K') {
+                                        newBoard[i][j] = null;
+                                    }
                                 }
-                                exploded.push({r, c});
+                                exploded.push({r:i, c:j});
                             }
                         }
                     }
                 }
-
-                if (!isSimulation) {
-                    this.turn = this.turn === 'w' ? 'b' : 'w';
-                }
-
-                return { exploded, captured: !!target };
+                return { board: newBoard, exploded, captured: !!t };
             },
 
-            getValidMoves(r, c) {
-                const p = this.board[r][c];
+            getLegalMoves(r, c, currentBoard = this.board) {
+                const p = currentBoard[r][c];
+                if(!p) return [];
+                const pseudo = this.getPseudoMoves(r, c, currentBoard);
+                const myColor = p[0];
+
+                return pseudo.filter(move => {
+                    const res = this.applyMove(currentBoard, {r,c}, move);
+                    const enemyColor = myColor==='w'?'b':'w';
+                    
+                    // === RULES UPDATE ===
+                    // You can move into check. You can expose your king.
+                    // The only rule is: you cannot suicide your king (blow it up yourself).
+                    // But since Kings are immune to splash damage in this version, 
+                    // they can only die by direct capture.
+                    // So basically: ALL pseudo moves are legal unless we somehow delete our own king directly (impossible).
+                    
+                    if (!this.findKing(res.board, myColor)) return false; // Just in case
+
+                    return true;
+                });
+            },
+
+            getPseudoMoves(r, c, boardState) {
+                const p = boardState[r][c];
                 if (!p) return [];
                 const color = p[0];
                 const type = p[1];
-                let moves = [];
-                
-                const check = (nr, nc) => {
+                const moves = [];
+
+                const add = (nr, nc) => {
                     if (nr>=0 && nr<8 && nc>=0 && nc<8) {
-                        const t = this.board[nr][nc];
-                        if (!t) { moves.push({r:nr, c:nc}); return true; }
-                        if (t[0] !== color) { moves.push({r:nr, c:nc}); return false; }
+                        const target = boardState[nr][nc];
+                        if (target === null) {
+                            moves.push({r:nr, c:nc});
+                            return true;
+                        } else if (target[0] !== color) {
+                            moves.push({r:nr, c:nc});
+                            return false;
+                        }
                     }
                     return false;
                 };
@@ -338,369 +224,355 @@
 
                 if (type === 'P') {
                     const d = color === 'w' ? -1 : 1;
-                    if (!this.getPiece(r+d, c)) {
-                        moves.push({r:r+d, c:c});
-                        if ((color==='w' && r===6) || (color==='b' && r===1)) {
-                            if(!this.getPiece(r+d*2, c)) moves.push({r:r+d*2, c:c});
+                    if (nr(r+d, c) && boardState[r+d][c] === null) {
+                        moves.push({r:r+d, c});
+                        if ((color==='w'&&r===6 || color==='b'&&r===1) && boardState[r+d*2][c] === null) {
+                            moves.push({r:r+d*2, c});
                         }
                     }
-                    [[d,1], [d,-1]].forEach(([dr, dc]) => {
-                        const t = this.getPiece(r+dr, c+dc);
-                        if (t && t[0]!==color) moves.push({r:r+dr, c:c+dc});
+                    [[d,1],[d,-1]].forEach(([dr,dc]) => {
+                        if (nr(r+dr, c+dc)) {
+                            const t = boardState[r+dr][c+dc];
+                            if (t && t[0]!==color) moves.push({r:r+dr, c:c+dc});
+                        }
                     });
                 } else if (['R','B','Q'].includes(type)) {
                     dirs[type].forEach(([dr, dc]) => {
-                        let nr=r+dr, nc=c+dc;
-                        while(check(nr, nc)) { nr+=dr; nc+=dc; }
+                        let nr = r+dr, nc = c+dc;
+                        while(add(nr, nc)) { nr+=dr; nc+=dc; }
                     });
                 } else {
-                    dirs[type].forEach(([dr, dc]) => check(r+dr, c+dc));
+                    dirs[type].forEach(([dr, dc]) => add(r+dr, c+dc));
                 }
                 return moves;
             },
 
-            checkWin() {
-                let w=false, b=false;
+            findKing(board, color) {
                 for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
-                    if (this.board[r][c] === 'wK') w=true;
-                    if (this.board[r][c] === 'bK') b=true;
+                    if(board[r][c] === color+'K') return {r,c};
                 }
-                if (!w) return 'b';
-                if (!b) return 'w';
+                return null;
+            },
+
+            isKingInCheck(boardState, color) {
+                const kPos = this.findKing(boardState, color);
+                if (!kPos) return true;
+                const enemyColor = color==='w'?'b':'w';
+                for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
+                    const p = boardState[r][c];
+                    if(p && p[0]===enemyColor) {
+                        const moves = this.getPseudoMoves(r, c, boardState);
+                        if(moves.some(m => m.r===kPos.r && m.c===kPos.c)) return true;
+                    }
+                }
+                return false;
+            },
+
+            checkState() {
+                const wKing = this.findKing(this.board, 'w');
+                const bKing = this.findKing(this.board, 'b');
+                if (!wKing) return 'b'; 
+                if (!bKing) return 'w'; 
+                
+                // Stalemate logic
+                let hasMove = false;
+                for(let r=0; r<8; r++) {
+                    for(let c=0; c<8; c++) {
+                        const p = this.board[r][c];
+                        if (p && p[0] === this.turn) {
+                            if (this.getLegalMoves(r, c).length > 0) {
+                                hasMove = true;
+                                break;
+                            }
+                        }
+                    }
+                    if(hasMove) break;
+                }
+                if (!hasMove) return 'draw';
+
                 return null;
             }
         };
 
-        // ==========================================
-        // UI & CONTROLLER
-        // ==========================================
-        const UI = {
-            els: {
-                grid: document.getElementById('board-grid'),
-                pieces: document.getElementById('pieces-layer'),
-                effects: document.getElementById('effects-layer'),
-                wrapper: document.getElementById('board-wrapper'),
-                status: document.getElementById('status-text'),
-                dot: document.getElementById('conn-dot'),
-                menus: {
-                    main: document.getElementById('main-menu'),
-                    loading: document.getElementById('loading-screen')
-                }
-            },
-            selected: null,
-            validMoves: [],
+        const Game = {
+            selected: null, validMoves: [], history: [],
+            mode: 'local', myColor: 'w', gameId: null, user: null, isOver: false,
 
             init() {
-                // Generate Grid
-                this.els.grid.innerHTML = '';
-                for(let r=0; r<8; r++) {
-                    for(let c=0; c<8; c++) {
-                        const div = document.createElement('div');
-                        div.className = `square ${(r+c)%2===0 ? 'light' : 'dark'}`;
-                        div.onclick = () => Game.onClick(r, c);
-                        this.els.grid.appendChild(div);
+                Engine.init();
+                this.setupGrid();
+                try {
+                    firebase.initializeApp(firebaseConfig);
+                    this.db = firebase.firestore();
+                    firebase.auth().onAuthStateChanged(u => {
+                        this.user = u;
+                        if(!u) firebase.auth().signInAnonymously();
+                    });
+                } catch(e) {}
+                this.render();
+            },
+
+            setupGrid() {
+                const g = document.getElementById('board-grid');
+                g.innerHTML = '';
+                for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
+                    const d = document.createElement('div');
+                    d.className = `square ${(r+c)%2===0?'light':'dark'}`;
+                    d.dataset.r = r; d.dataset.c = c;
+                    d.onclick = () => this.handleClick(r, c);
+                    g.appendChild(d);
+                }
+            },
+
+            handleClick(r, c) {
+                if (this.isOver) return;
+                if (this.mode === 'online' && Engine.turn !== this.myColor) return;
+
+                if (this.selected) {
+                    const move = this.validMoves.find(m => m.r === r && m.c === c);
+                    if (move) {
+                        this.executeMove(this.selected, move);
+                        this.clearSelection();
+                        return;
                     }
+                }
+
+                const p = Engine.board[r][c];
+                if (p && p[0] === Engine.turn) {
+                    this.selected = {r, c};
+                    this.validMoves = Engine.getLegalMoves(r, c);
+                    this.highlightMoves();
+                } else {
+                    this.clearSelection();
+                }
+            },
+
+            highlightMoves() {
+                this.clearHighlights();
+                const g = document.getElementById('board-grid').children;
+                const selIdx = this.selected.r*8 + this.selected.c;
+                g[selIdx].classList.add('selected-sq');
+
+                this.validMoves.forEach(m => {
+                    const idx = m.r*8 + m.c;
+                    if (Engine.board[m.r][m.c]) g[idx].classList.add('capture-move');
+                    else g[idx].classList.add('valid-move');
+                });
+            },
+
+            clearHighlights() {
+                document.querySelectorAll('.square').forEach(el => 
+                    el.className = el.className.replace(/ selected-sq| valid-move| capture-move/g, '')
+                );
+            },
+
+            clearSelection() {
+                this.selected = null;
+                this.validMoves = [];
+                this.clearHighlights();
+            },
+
+            executeMove(from, to, isRemote = false) {
+                if(!isRemote) this.history.push({b: JSON.stringify(Engine.board), t: Engine.turn});
+
+                const res = Engine.applyMove(Engine.board, from, to);
+                Engine.board = res.board;
+
+                if(res.exploded.length > 0) this.showExplosion(res.exploded);
+
+                const winner = Engine.checkState();
+                if (winner && winner !== 'draw') {
+                    this.handleWin(winner);
+                    if(this.mode === 'online' && !isRemote) {
+                        this.db.collection('atomic_games').doc(this.gameId).update({
+                            board: JSON.stringify(Engine.board),
+                            winner: winner
+                        });
+                    }
+                    return;
+                }
+
+                const nextTurn = Engine.turn === 'w' ? 'b' : 'w';
+                Engine.turn = nextTurn;
+
+                if(this.mode === 'online' && !isRemote) {
+                    this.db.collection('atomic_games').doc(this.gameId).update({
+                        board: JSON.stringify(Engine.board),
+                        turn: nextTurn,
+                        lastMove: {from, to, exploded: res.exploded}
+                    });
+                } else {
+                    this.render();
+                    if(this.mode === 'bot' && nextTurn === 'b') setTimeout(() => this.botThink(), 500);
                 }
                 this.render();
             },
 
-            render() {
-                // 1. Render Pieces
-                this.els.pieces.innerHTML = '';
-                const board = Engine.board;
-                const piecesMap = { w: { K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙' }, b: { K:'♚',Q:'♕',R:'♜',B:'♝',N:'♞',P:'♟' } };
+            handleWin(result) {
+                this.isOver = true;
+                this.render();
+                const texts = { 'w': "WHITE WINS!", 'b': "BLACK WINS!", 'draw': "DRAW" };
+                const color = result === 'w' ? "#fff" : (result==='draw' ? '#aaa' : "var(--accent)");
+                
+                document.getElementById('win-text').innerText = texts[result];
+                document.getElementById('win-text').style.color = color;
+                document.getElementById('win-modal').classList.remove('hidden');
+            },
 
-                // Rotation Logic
-                const isRotated = (Game.mode === 'online' && Game.myColor === 'b');
-                if (isRotated) this.els.wrapper.classList.add('rotated');
-                else this.els.wrapper.classList.remove('rotated');
-
-                for(let r=0; r<8; r++) {
-                    for(let c=0; c<8; c++) {
-                        const p = board[r][c];
-                        if (p) {
-                            const el = document.createElement('div');
-                            el.className = `piece ${p[0] === 'w' ? 'white' : 'black'}`;
-                            el.textContent = piecesMap[p[0]][p[1]];
-                            // Counter-rotate if board is rotated
-                            el.style.transform = `translate(${c*100}%, ${r*100}%) ${isRotated ? 'rotate(180deg)' : ''}`;
-                            this.els.pieces.appendChild(el);
-                        }
+            botThink() {
+                const moves = [];
+                for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
+                    if(Engine.board[r][c]?.startsWith('b')) {
+                        Engine.getLegalMoves(r, c).forEach(to => moves.push({from:{r,c}, to}));
                     }
                 }
 
-                // 2. Highlights
-                const squares = this.els.grid.children;
-                for(let i=0; i<64; i++) squares[i].className = squares[i].className.replace(/ highlight| danger/g, '');
-                
-                if (this.selected) {
-                    squares[this.selected.r*8 + this.selected.c].classList.add('highlight');
-                    this.validMoves.forEach(m => {
-                        const idx = m.r*8 + m.c;
-                        squares[idx].classList.add('highlight');
-                        if (board[m.r][m.c]) squares[idx].classList.add('danger');
-                    });
-                }
+                if(moves.length === 0) return; 
 
-                // 3. Status
-                if (Game.mode === 'online') {
-                    this.els.dot.classList.add('online');
-                    this.els.status.textContent = Game.myColor === Engine.turn ? "YOUR TURN" : "OPPONENT'S TURN";
-                } else {
-                    this.els.dot.classList.remove('online');
-                    this.els.status.textContent = Engine.turn === 'w' ? "White to Move" : "Black to Move";
+                let bestMove = null;
+                let bestScore = -Infinity;
+
+                for (let m of moves) {
+                    const score = this.evaluateMove(m);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = m;
+                    } else if (score === bestScore && Math.random() > 0.5) {
+                        bestMove = m;
+                    }
                 }
+                this.executeMove(bestMove.from, bestMove.to);
             },
 
-            explode(coords) {
-                // Trigger shake
-                const isRotated = this.els.wrapper.classList.contains('rotated');
-                this.els.wrapper.classList.remove('shake', 'shake-normal');
-                void this.els.wrapper.offsetWidth; // Force reflow
-                this.els.wrapper.classList.add(isRotated ? 'shake' : 'shake-normal');
+            evaluateMove(m) {
+                const simRes = Engine.applyMove(Engine.board, m.from, m.to);
+                let score = 0;
 
-                // Particles
+                if (m.to.r!==undefined && Engine.board[m.to.r][m.to.c]) score += 10; 
+                if (!Engine.findKing(simRes.board, 'w')) score += 100000; // KILL KING
+                if (!Engine.findKing(simRes.board, 'b')) score -= 100000; // SUICIDE
+                
+                // Bot prefers not to be in check, even if it's legal
+                if (Engine.isKingInCheck(simRes.board, 'b')) score -= 200;
+
+                score += Math.random() * 5;
+                return score;
+            },
+
+            render() {
+                const layer = document.getElementById('pieces');
+                layer.innerHTML = '';
+                const sym = {w:{K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙'}, b:{K:'♚',Q:'♕',R:'♜',B:'♝',N:'♞',P:'♟'}};
+                const rot = (this.mode==='online' && this.myColor==='b');
+                
+                document.getElementById('board-wrapper').style.transform = rot ? 'rotate(180deg)' : '';
+                document.getElementById('board-wrapper').style.setProperty('--rot', rot ? '180deg' : '0deg');
+
+                // Clear Check Highlights
+                document.querySelectorAll('.square').forEach(el => el.classList.remove('in-check'));
+
+                // Draw Pieces
+                Engine.board.forEach((row, r) => row.forEach((c, col) => {
+                    if(!c) return;
+                    const el = document.createElement('div');
+                    el.className = `piece p-${c[0]}`;
+                    el.textContent = sym[c[0]][c[1]];
+                    el.style.transform = `translate(${col*100}%, ${r*100}%) ${rot?'rotate(180deg)':''}`;
+                    layer.appendChild(el);
+
+                    // Show Check
+                    if (c[1] === 'K') {
+                        if (Engine.isKingInCheck(Engine.board, c[0])) {
+                            const idx = r*8 + col;
+                            document.getElementById('board-grid').children[idx].classList.add('in-check');
+                        }
+                    }
+                }));
+
+                const txt = this.mode==='online' 
+                    ? (Engine.turn===this.myColor ? "YOUR TURN" : "OPPONENT") 
+                    : (Engine.turn==='w' ? "White Turn" : "Black Turn");
+                document.getElementById('status').textContent = txt;
+            },
+
+            showExplosion(coords) {
+                const layer = document.getElementById('effects');
+                const wrap = document.getElementById('board-wrapper');
+                wrap.classList.remove('shake');
+                void wrap.offsetWidth;
+                wrap.classList.add('shake');
                 coords.forEach(p => {
                     const el = document.createElement('div');
                     el.className = 'explosion';
                     el.style.left = (p.c * 12.5) + '%';
                     el.style.top = (p.r * 12.5) + '%';
-                    this.els.effects.appendChild(el);
-                    setTimeout(() => el.remove(), 700);
+                    layer.appendChild(el);
+                    setTimeout(() => el.remove(), 600);
                 });
             },
 
-            showMenu() { this.els.menus.main.classList.remove('hidden'); },
-            hideMenus() { document.querySelectorAll('.overlay').forEach(e => e.classList.add('hidden')); },
-            showLoading(msg) { 
-                this.els.menus.loading.classList.remove('hidden'); 
-                document.getElementById('loading-msg').textContent = msg;
-            }
-        };
-
-        // ==========================================
-        // GAME LOGIC (Local + Online)
-        // ==========================================
-        const Game = {
-            mode: 'local', // local, bot, online
-            myColor: 'w',
-            db: null,
-            gameId: null,
-            unsub: null,
-            user: null,
-
-            init() {
-                Engine.init();
-                UI.init();
-                
-                // Init Firebase
-                try {
-                    if (firebase.apps.length === 0) firebase.initializeApp(firebaseConfig);
-                    this.db = firebase.firestore();
-                    firebase.auth().onAuthStateChanged(u => {
-                        this.user = u;
-                        if (!u) firebase.auth().signInAnonymously();
-                    });
-                } catch(e) { console.error("Firebase Error", e); }
-            },
-
-            onClick(r, c) {
-                if (this.mode === 'online' && Engine.turn !== this.myColor) return;
-                
-                const p = Engine.getPiece(r, c);
-                
-                // Select
-                if (p && p[0] === Engine.turn) {
-                    UI.selected = {r, c};
-                    UI.validMoves = Engine.getValidMoves(r, c);
-                    UI.render();
-                    return;
-                }
-
-                // Move
-                if (UI.selected) {
-                    const move = UI.validMoves.find(m => m.r===r && m.c===c);
-                    if (move) {
-                        this.executeMove(UI.selected, move);
-                        UI.selected = null;
-                        UI.validMoves = [];
-                        UI.render();
-                    } else {
-                        UI.selected = null;
-                        UI.validMoves = [];
-                        UI.render();
-                    }
-                }
-            },
-
-            executeMove(from, to) {
-                if (this.mode === 'online') {
-                    // 1. Calc locally
-                    const res = Engine.move(from, to, true); // Simulation
-                    
-                    // 2. Show explosion immediately
-                    if (res.exploded.length > 0) UI.explode(res.exploded);
-
-                    // 3. Send to DB
-                    const nextTurn = Engine.turn === 'w' ? 'b' : 'w';
-                    this.db.collection('atomic_games').doc(this.gameId).update({
-                        board: JSON.stringify(Engine.board),
-                        turn: nextTurn,
-                        lastMove: { from, to, exploded: res.exploded }, 
-                        winner: Engine.checkWin()
-                    });
-
-                } else {
-                    // Local / Bot
-                    const res = Engine.move(from, to);
-                    if (res.exploded.length > 0) UI.explode(res.exploded);
-                    
-                    const win = Engine.checkWin();
-                    if (win) { setTimeout(() => alert(win + " Wins!"), 100); }
-
-                    if (this.mode === 'bot' && !win && Engine.turn === 'b') {
-                        setTimeout(() => this.botMove(), 500);
-                    }
-                }
-                UI.render();
-            },
-
-            botMove() {
-                const moves = [];
-                for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
-                    if (Engine.board[r][c]?.startsWith('b')) {
-                        Engine.getValidMoves(r, c).forEach(to => moves.push({from:{r,c}, to}));
-                    }
-                }
-                if (moves.length === 0) return;
-                const m = moves[Math.floor(Math.random() * moves.length)];
-                this.executeMove(m.from, m.to);
-            },
-
-            undo() {
-                if (this.mode === 'online') return;
-                if (Engine.history.length === 0) return;
-                
-                const prev = Engine.history.pop();
-                Engine.board = JSON.parse(prev.board);
-                Engine.turn = prev.turn;
-                
-                if (this.mode === 'bot') {
-                    const prev2 = Engine.history.pop();
-                    if (prev2) {
-                        Engine.board = JSON.parse(prev2.board);
-                        Engine.turn = prev2.turn;
-                    }
-                }
-                UI.render();
-            },
-
-            // --- ONLINE ---
             async findMatch() {
-                if (!this.user) return alert("Connecting to service...");
-                UI.showLoading("Looking for opponent...");
+                document.getElementById('loading').classList.remove('hidden');
                 this.mode = 'online';
-
-                try {
-                    const ref = this.db.collection('atomic_games');
-                    const snap = await ref.where('status', '==', 'waiting').limit(1).get();
-                    
-                    if (!snap.empty) {
-                        const doc = snap.docs[0];
-                        // Transaction to safely join
-                        await this.db.runTransaction(async (t) => {
-                            const fresh = await t.get(doc.ref);
-                            if(fresh.data().status !== 'waiting') throw "Taken";
-                            t.update(doc.ref, { status: 'playing', playerBlack: this.user.uid });
-                        });
-                        this.startGame(doc.id, 'b');
-                    } else {
-                        const doc = await ref.add({
-                            status: 'waiting',
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                            playerWhite: this.user.uid,
-                            board: JSON.stringify(Engine.board),
-                            turn: 'w'
-                        });
-                        this.startGame(doc.id, 'w');
-                    }
-                } catch(e) {
-                    if (e === "Taken") return this.findMatch(); // Retry if taken
-                    alert("Error: " + e.message);
-                    this.cancelMatch();
+                const ref = this.db.collection('atomic_games');
+                const snap = await ref.where('status', '==', 'waiting').limit(1).get();
+                if(!snap.empty) {
+                    const doc = snap.docs[0];
+                    await doc.ref.update({ status: 'playing', playerBlack: this.user.uid });
+                    this.startGame(doc.id, 'b');
+                } else {
+                    const doc = await ref.add({ status: 'waiting', createdAt: firebase.firestore.FieldValue.serverTimestamp(), playerWhite: this.user.uid, board: JSON.stringify(Engine.board), turn: 'w' });
+                    this.startGame(doc.id, 'w');
                 }
             },
-
             startGame(id, color) {
-                this.gameId = id;
-                this.myColor = color;
-                
-                if (color === 'w') UI.showLoading("Waiting for player to join...");
-                
-                if (this.unsub) this.unsub();
+                this.gameId = id; this.myColor = color;
                 this.unsub = this.db.collection('atomic_games').doc(id).onSnapshot(doc => {
-                    const data = doc.data();
-                    if (!data) return; 
+                    const d = doc.data();
+                    if(!d || d.status !== 'playing') return;
+                    document.getElementById('menu').classList.add('hidden');
+                    document.getElementById('loading').classList.add('hidden');
+                    
+                    if (d.winner) {
+                        this.handleWin(d.winner);
+                        return;
+                    }
 
-                    if (data.status === 'playing') {
-                        UI.hideMenus();
-                        
-                        const sBoard = JSON.parse(data.board);
-                        const boardChanged = JSON.stringify(Engine.board) !== data.board;
-                        
-                        if (boardChanged) {
-                             Engine.board = sBoard;
-                             Engine.turn = data.turn;
-                             
-                             // If opponent moved and triggered explosion, show it
-                             if (data.lastMove && data.lastMove.exploded && data.turn === this.myColor) {
-                                 UI.explode(data.lastMove.exploded);
-                             }
-                        }
-                        
-                        UI.render();
-
-                        if (data.winner) {
-                            setTimeout(() => {
-                                alert(data.winner === 'w' ? "White Wins!" : "Black Wins!");
-                                this.cancelMatch();
-                            }, 500);
-                        }
+                    if(d.board !== JSON.stringify(Engine.board)) {
+                        Engine.board = JSON.parse(d.board);
+                        Engine.turn = d.turn;
+                        if(d.lastMove?.exploded?.length && Engine.turn === this.myColor) this.showExplosion(d.lastMove.exploded);
+                        this.render();
                     }
                 });
             },
-
             cancelMatch() {
-                if (this.gameId && this.myColor === 'w') {
-                    this.db.collection('atomic_games').doc(this.gameId).delete().catch(()=>{});
+                if(this.unsub) this.unsub();
+                if(this.gameId && this.myColor==='w') this.db.collection('atomic_games').doc(this.gameId).delete();
+                document.getElementById('loading').classList.add('hidden');
+            },
+            startLocal() { this.mode='local'; document.getElementById('menu').classList.add('hidden'); Engine.init(); this.render(); },
+            startBot() { this.mode='bot'; document.getElementById('menu').classList.add('hidden'); Engine.init(); this.render(); },
+            undo() {
+                if(this.mode === 'online') return;
+                if(this.history.length) {
+                    const state = this.history.pop();
+                    Engine.board = JSON.parse(state.b);
+                    Engine.turn = state.t;
+                    this.isOver = false;
+                    document.getElementById('win-modal').classList.add('hidden');
+                    if(this.mode === 'bot' && this.history.length) {
+                        const s2 = this.history.pop();
+                        Engine.board = JSON.parse(s2.b);
+                        Engine.turn = s2.t;
+                    }
+                    this.render();
+                    this.clearSelection();
                 }
-                if (this.unsub) this.unsub();
-                this.gameId = null;
-                UI.showMenu();
-                UI.hideMenus(); // Actually hides loading screen but shows menu
-                document.getElementById('main-menu').classList.remove('hidden');
-                document.getElementById('loading-screen').classList.add('hidden');
-            },
-
-            startLocal() {
-                this.mode = 'local';
-                Engine.init();
-                UI.hideMenus();
-                UI.render();
-            },
-            
-            startBot(diff) {
-                this.mode = 'bot';
-                Engine.init();
-                UI.hideMenus();
-                UI.render();
             }
         };
 
         Game.init();
-
     </script>
 </body>
 </html>
-
-
