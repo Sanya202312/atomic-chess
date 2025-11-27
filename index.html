@@ -10,16 +10,16 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
     <style>
-        :root { --bg: #0b0c15; --accent: #00f3ff; --danger: #ff0055; --valid: #00ff88; }
-        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; touch-action: none; }
+        :root { --bg: #0b0c15; --accent: #00f3ff; --danger: #ff0055; --valid: #00ff88; --warning: #ffaa00; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; touch-action: none; }
         
-        #game-ui { width: 95vmin; height: 95vmin; max-width: 600px; max-height: 600px; position: relative; display: flex; flex-direction: column; gap: 10px; }
+        #game-ui { width: 95vmin; height: 95vmin; max-width: 600px; max-height: 600px; position: relative; display: flex; flex-direction: column; gap: 10px; z-index: 10; }
         
-        .header { display: flex; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; }
-        h1 { margin: 0; font-size: 1.1rem; color: var(--accent); }
-        #status { font-weight: bold; color: #aaa; }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); }
+        h1 { margin: 0; font-size: 1.1rem; color: var(--accent); letter-spacing: 1px; }
+        #status { font-weight: bold; color: #aaa; font-size: 0.9rem; }
         
-        #board-wrapper { flex: 1; position: relative; border: 2px solid #333; background: #1e1e24; transition: transform 0.5s; }
+        #board-wrapper { flex: 1; position: relative; border: 2px solid #333; background: #1e1e24; transition: transform 0.5s; border-radius: 4px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         .rotated { transform: rotate(180deg); }
         
         #board-grid { 
@@ -32,9 +32,9 @@
         .square { width: 100%; height: 100%; position: relative; z-index: 5; }
         .light { background: #2d2d3a; } .dark { background: #1e1e24; }
         
-        .selected-sq { background: rgba(0, 243, 255, 0.4) !important; }
+        /* Highlights */
+        .selected-sq { background: rgba(0, 243, 255, 0.4) !important; box-shadow: inset 0 0 15px rgba(0,243,255,0.5); }
         
-        /* Check warning is now just visual info, not a blocker */
         .in-check { background: radial-gradient(circle, rgba(255, 0, 85, 0.8) 0%, transparent 80%) !important; animation: pulse-red 1s infinite; }
         @keyframes pulse-red { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
 
@@ -60,17 +60,67 @@
         .shake { animation: shake 0.4s; }
         @keyframes shake { 0%,100% { transform: translate(0,0) rotate(var(--rot)); } 25% { transform: translate(5px,0) rotate(var(--rot)); } 75% { transform: translate(-5px,0) rotate(var(--rot)); } }
 
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11,12,21,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11,12,21,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(5px); }
         .hidden { display: none !important; }
         
-        button { background: transparent; border: 1px solid #fff; color: #fff; padding: 12px 24px; margin: 8px; cursor: pointer; text-transform: uppercase; width: 220px; font-weight: bold; }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button { background: transparent; border: 1px solid #fff; color: #fff; padding: 12px 24px; margin: 8px; cursor: pointer; text-transform: uppercase; width: 220px; font-weight: bold; border-radius: 4px; transition: 0.2s; }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); box-shadow: 0 0 15px var(--accent); }
         .primary { border-color: var(--accent); color: var(--accent); }
+        
         .footer { display: flex; justify-content: center; gap: 10px; }
         .footer button { width: auto; font-size: 0.8rem; padding: 8px 16px; width: auto; }
         
+        /* Win Modal */
         #win-modal { background: rgba(0,0,0,0.9); z-index: 200; }
-        #win-text { font-size: 2rem; color: var(--valid); margin-bottom: 20px; text-align: center; }
+        #win-text { font-size: 2rem; color: var(--valid); margin-bottom: 20px; text-align: center; text-shadow: 0 0 20px var(--valid); }
+
+        /* --- CHAOS RULES DRAWER --- */
+        .drawer {
+            position: fixed; top: 0; right: 0; bottom: 0;
+            width: 320px; background: rgba(15, 16, 25, 0.98);
+            backdrop-filter: blur(15px);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 500;
+            display: flex; flex-direction: column;
+            padding: 20px;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+        }
+        .drawer.open { transform: translateX(0); }
+        
+        .drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .drawer-title { margin: 0; font-size: 1.2rem; color: var(--warning); text-transform: uppercase; letter-spacing: 1px; }
+        .close-btn { width: 30px; height: 30px; padding: 0; border: none; background: transparent; color: #fff; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; }
+        .close-btn:hover { color: var(--danger); box-shadow: none; background: transparent; }
+
+        .rule-list { overflow-y: auto; flex: 1; padding-right: 5px; }
+        .rule-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 12px; margin-bottom: 10px;
+            border-radius: 6px;
+            transition: 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .rule-card:hover { border-color: var(--accent); background: rgba(0, 243, 255, 0.05); }
+        .rule-card.active { border-color: var(--valid); background: rgba(0, 255, 136, 0.05); }
+        .rule-card.active::before { content: 'ACTIVE'; position: absolute; top: 5px; right: 5px; font-size: 0.6rem; color: var(--valid); font-weight: bold; border: 1px solid var(--valid); padding: 1px 4px; border-radius: 3px; }
+        
+        .rule-name { font-weight: bold; color: #fff; margin-bottom: 4px; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+        .rule-icon { font-size: 1.2rem; }
+        .rule-desc { font-size: 0.75rem; color: #aaa; line-height: 1.4; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .chaos-btn { border-color: var(--warning); color: var(--warning); font-size: 0.75rem; padding: 5px 10px; width: auto; margin: 0; }
+        .chaos-btn:hover { background: var(--warning); color: #000; }
+
     </style>
 </head>
 <body>
@@ -80,7 +130,7 @@
         <button class="primary" onclick="Game.findMatch()">Play Online</button>
         <button onclick="Game.startLocal()">Local PvP</button>
         <button onclick="Game.startBot()">Vs Smart Bot</button>
-        <div style="margin-top:20px; color:#555; font-size:0.8rem;">Capture The King Edition</div>
+        <div style="margin-top:20px; color:#555; font-size:0.8rem;">Chaos Edition</div>
     </div>
 
     <div id="loading" class="overlay hidden">
@@ -93,10 +143,63 @@
         <button class="primary" onclick="location.reload()">Menu</button>
     </div>
 
+    <!-- RULES DRAWER -->
+    <div id="rules-drawer" class="drawer">
+        <div class="drawer-header">
+            <h2 class="drawer-title">Rulebook of Chaos</h2>
+            <button class="close-btn" onclick="UI.toggleRules()">×</button>
+        </div>
+        <div class="rule-list">
+            <div class="rule-card active">
+                <div class="rule-name"><span class="rule-icon">☢️</span> Atomic Blast</div>
+                <div class="rule-desc">Captures trigger a 3x3 explosion. Kings are immune to splash damage but die if captured directly.</div>
+            </div>
+            <div class="rule-card active">
+                <div class="rule-name"><span class="rule-icon">🛡️</span> Survivor</div>
+                <div class="rule-desc">The piece that initiates a capture survives the explosion center.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">👺</span> Goblin Saboteur</div>
+                <div class="rule-desc">One random Pawn is a Goblin. If it reaches the back rank, it detonates the opponent's entire back row.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">🌉</span> The Bridge</div>
+                <div class="rule-desc">The center 4 squares (d4,d5,e4,e5) are a bridge over a chasm. Only one unit can be on the bridge at a time.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">👻</span> Quantum Pawn</div>
+                <div class="rule-desc">Pawns exist in a state of flux and can move backwards one square if not attacked.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">🩸</span> Vampire Queen</div>
+                <div class="rule-desc">Every time your Queen captures a piece, you resurrect a dead Pawn on a random starting square.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">🌫️</span> Fog of War</div>
+                <div class="rule-desc">You can only see squares that your pieces are currently attacking.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">🌪️</span> Gravity</div>
+                <div class="rule-desc">After every 5 turns, all pieces slide one square towards the bottom of the board.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">💣</span> Minefield</div>
+                <div class="rule-desc">3 random squares are mines. Stepping on them destroys the piece instantly.</div>
+            </div>
+            <div class="rule-card">
+                <div class="rule-name"><span class="rule-icon">👑</span> Shotgun King</div>
+                <div class="rule-desc">The King has a shotgun. Instead of moving, he can fire a cone of damage 2 squares range (Cooldown: 3 turns).</div>
+            </div>
+        </div>
+    </div>
+
     <div id="game-ui">
         <div class="header">
             <h1 id="app-title">Atomic Chess</h1>
-            <span id="status">Ready</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span id="status">Ready</span>
+                <button class="chaos-btn" onclick="UI.toggleRules()">📜 RULES</button>
+            </div>
         </div>
         <div id="board-wrapper">
             <div id="board-grid"></div>
@@ -121,6 +224,13 @@
         };
 
         function nr(r, c) { return r>=0 && r<8 && c>=0 && c<8; }
+
+        // --- UI HELPER ---
+        const UI = {
+            toggleRules: () => {
+                document.getElementById('rules-drawer').classList.toggle('open');
+            }
+        };
 
         const Engine = {
             board: [], turn: 'w',
@@ -153,7 +263,7 @@
                     for(let i=to.r-1; i<=to.r+1; i++) {
                         for(let j=to.c-1; j<=to.c+1; j++) {
                             if(nr(i,j)) {
-                                // Attacker survives rule
+                                // Rule: Attacker Survives
                                 if (i === to.r && j === to.c) continue;
 
                                 const victim = newBoard[i][j];
@@ -180,14 +290,9 @@
                     const res = this.applyMove(currentBoard, {r,c}, move);
                     const enemyColor = myColor==='w'?'b':'w';
                     
-                    // === RULES UPDATE ===
-                    // You can move into check. You can expose your king.
-                    // The only rule is: you cannot suicide your king (blow it up yourself).
-                    // But since Kings are immune to splash damage in this version, 
-                    // they can only die by direct capture.
-                    // So basically: ALL pseudo moves are legal unless we somehow delete our own king directly (impossible).
-                    
-                    if (!this.findKing(res.board, myColor)) return false; // Just in case
+                    if (!this.findKing(res.board, enemyColor)) return true;
+                    // Note: No check check. King capture enabled.
+                    if (!this.findKing(res.board, myColor)) return false; // Anti-Suicide
 
                     return true;
                 });
@@ -274,7 +379,6 @@
                 if (!wKing) return 'b'; 
                 if (!bKing) return 'w'; 
                 
-                // Stalemate logic
                 let hasMove = false;
                 for(let r=0; r<8; r++) {
                     for(let c=0; c<8; c++) {
@@ -452,7 +556,6 @@
                 if (!Engine.findKing(simRes.board, 'w')) score += 100000; // KILL KING
                 if (!Engine.findKing(simRes.board, 'b')) score -= 100000; // SUICIDE
                 
-                // Bot prefers not to be in check, even if it's legal
                 if (Engine.isKingInCheck(simRes.board, 'b')) score -= 200;
 
                 score += Math.random() * 5;
@@ -468,10 +571,8 @@
                 document.getElementById('board-wrapper').style.transform = rot ? 'rotate(180deg)' : '';
                 document.getElementById('board-wrapper').style.setProperty('--rot', rot ? '180deg' : '0deg');
 
-                // Clear Check Highlights
                 document.querySelectorAll('.square').forEach(el => el.classList.remove('in-check'));
 
-                // Draw Pieces
                 Engine.board.forEach((row, r) => row.forEach((c, col) => {
                     if(!c) return;
                     const el = document.createElement('div');
@@ -480,7 +581,6 @@
                     el.style.transform = `translate(${col*100}%, ${r*100}%) ${rot?'rotate(180deg)':''}`;
                     layer.appendChild(el);
 
-                    // Show Check
                     if (c[1] === 'K') {
                         if (Engine.isKingInCheck(Engine.board, c[0])) {
                             const idx = r*8 + col;
